@@ -12,18 +12,26 @@ class Radio:
         self.default_dict = {}
         return
 
-    def get_channel_dict(self):
-        new_dict = dict((x, self.default_dict.get(x, '')) for x in self.fields)
+    def get_channel_dict(self, adict=None):
+        adict = adict if adict else self.default_dict
+        new_dict = dict((x, adict.get(x, '')) for x in self.fields)
         return new_dict
 
 
-FTM400 = Radio(name='FTM-400', channels=500)
+FTM300 = Radio(name='FTM300', channels=999)
+FTM300.fields = [
+    'Location', 'RX Frequency', 'TX Frequency', 'Offset', 'Duplex', 'Mode', 'DigAnalog',
+    'Name', 'Tone', 'rToneFreq', 'DtcsCode', 'User CTCSS', 'RX DGID', 'TX DGID', 'TX Power',
+    'M-GRP', 'Scan', 'Step', 'Narrow', 'Clock Shift', 'Comment', 'Band']
+FTM300.default_dict = dict(Band=0)
+
+FTM400 = Radio(name='FTM400', channels=500)
 FTM400.fields = [
     'Location', 'RX Frequency', 'TX Frequency', 'Offset', 'Duplex', 'Mode', 'Name', 'Tone', 'rToneFreq', 'DtcsCode',
-    'UnkOne', 'UnkTwo', 'UnkThree', 'Width', 'UnkFour', 'Comment', 'Band']
+    'User CTCSS', 'TX Power', 'UnkThree', 'Width', 'UnkFour', 'Comment', 'Band']
 FTM400.default_dict = dict(UnkFour=0, Band=0)
 
-RADIOS = [FTM400, ]
+RADIOS = [FTM300, FTM400]
 
 # Adding the command line flags
 parser = argparse.ArgumentParser(description="This tool converts a chirp csv file to a Yaesu importable csv file.")
@@ -77,30 +85,41 @@ with open(inputFile) as csvfile:
                     freq = freq - float( row['Offset'] )
                 elif row['Duplex'] == "+":
                     freq = freq + float( row['Offset'] )
-                outdict['TX Frequency'] = str(freq)
+                outdict['TX Frequency'] = '{:0.6f}'.format(freq)
             outdict['Offset'] = row['Offset']
             if row['Duplex'] in [ '+', '-' ] :
                 outdict['Duplex'] = row['Duplex'] + 'RPT'
             else :
                 outdict['Duplex'] = 'OFF'
             outdict['Mode'] = row['Mode']
+            if radio.name == 'FTM300' and outdict['Mode'] == 'NFM':
+                    outdict['Mode'] = 'FM'
             outdict['Name'] = row['Name'][0:8]
             if row["Tone"] == "Tone" :
-                outdict['Tone'] = 'TONE ENC'
+                outdict['Tone'] = 'TONE ENC' if radio.name == 'FTM400' else 'TONE'
             elif row["Tone"] == "TSQL" :
                 outdict['Tone'] = 'TONE SQL'
             else :
                 outdict['Tone'] = 'OFF'
             outdict['rToneFreq'] = row['rToneFreq'] + ' Hz'
             outdict['DtcsCode'] = row['DtcsCode']
-            outdict['UnkOne'] = '1500 Hz'
-            outdict['UnkTwo'] = 'HIGH'
+            outdict['User CTCSS'] = '1500 Hz'
+            outdict['TX Power'] = 'HIGH'
             outdict['UnkThree'] = 'OFF'
             outdict['Width'] = '12.5KHz' if row['Mode'] == 'NFM' else '25.0KHz'
+            outdict['Narrow'] = 'ON' if row['Mode'] == 'NFM' else 'OFF'
             outdict['Comment'] = row['Comment']
             outdict['Band'] = band
 
-            outlist.append(outdict)
+            outdict['DigAnalog'] = 'AMS'
+            outdict['RX DGID'] = 'RX 00'
+            outdict['TX DGID'] = 'TX 00'
+            outdict['M-GRP'] = 'OFF'
+            outdict['Scan'] = 'YES'
+            outdict['Step'] = '5.0KHz'
+            outdict['Clock Shift'] = 'OFF'
+
+            outlist.append(radio.get_channel_dict(outdict))
         else:
             # If it's not Tone, Don't do anything now, just add an empty line
             # This will have to handle DCS stuff one day.
