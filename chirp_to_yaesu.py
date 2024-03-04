@@ -61,13 +61,20 @@ FTM400.fields = [
     'Location', 'RX Frequency', 'TX Frequency', 'Offset', 'Duplex', 'Mode', 'Name', 'Tone', 'rToneFreq', 'DtcsCode',
     'User CTCSS', 'TX Power', 'UnkThree', 'Width', 'UnkFour', 'Comment', 'Band']
 
-RADIOS = [FT70, FTM300, FTM400]
+FTM500 = Radio(name='FTM500', channels=999)
+FTM500.fields = [
+    'Location', 'RX Frequency', 'TX Frequency', 'Offset', 'Duplex', 'Mode', 'DigAnalog',
+    'Name', 'Tone', 'rToneFreq', 'DtcsCode', 'User CTCSS', 'RX DGID', 'TX DGID', 'TX Power',
+    'Scan', 'Step', 'Narrow', 'Clock Shift', 'Comment', 'Band']
+
+
+RADIOS = [FT70, FTM300, FTM400, FTM500]
 
 # Adding the command line flags
 parser = argparse.ArgumentParser(description="This tool converts a chirp csv file to a Yaesu importable csv file.")
 parser.add_argument('--input', '-i', required = True)
 parser.add_argument('--output', '-o', default="Yaesu-import.csv")
-parser.add_argument('--radio', '-r', default='FTM400', choices=['FT70', 'FTM300', 'FTM400'], help='Specify radio model [FTM400]')
+parser.add_argument('--radio', '-r', default='FTM400', choices=['FT70', 'FTM300', 'FTM400', 'FTM500'], help='Specify radio model [FTM400]')
 parser.add_argument('--band', '-b', default='A', choices = ['A', 'B'], help='Specify the [A] or B band, only for FTM-400')
 args = parser.parse_args()
 
@@ -123,7 +130,7 @@ with open(inputFile) as csvfile:
             else :
                 outdict['Duplex'] = 'OFF'
             outdict['Mode'] = row['Mode']
-            if radio.name in ['FT70', 'FTM300'] and outdict['Mode'] == 'NFM':
+            if radio.name in ('FT70', 'FTM300', 'FTM500') and outdict['Mode'] == 'NFM':
                     outdict['Mode'] = 'FM'
             outdict['Name'] = row['Name'][0:8]
             if row["Tone"] == "Tone" :
@@ -142,7 +149,7 @@ with open(inputFile) as csvfile:
             outdict['Comment'] = row['Comment']
             outdict['Band'] = band
 
-            if radio.name == 'FTM300':
+            if radio.name in ('FTM300', 'FTM500'):
                 outdict['DigAnalog'] = 'AMS'
             elif radio.name == 'FT70':
                 outdict['DigAnalog'] = 'ANALOG'
