@@ -7,12 +7,15 @@ import argparse
 class Radio:
     """Detail required to build a CSV output record for the given device."""
 
-    def __init__(self, name, channels):
+    def __init__(self, name, channels=None, write_header=False):
         self.name = name
-        self.channels = int(channels)
+        self.channels = None
+        if channels is not None:
+            self.channels = int(channels)
         self.fields = []
         self.channel_dict = {}
         self.empty_channel_dict = {}
+        self.write_header = write_header
         return
 
     def build_channel_dict(self, adict=None):
@@ -98,20 +101,32 @@ FTM500.update_channel_dict({
     'DigAnalog': 'AMS'
 })
 
-RADIOS = [FT70, FTM300, FTM400, FTM500]
+CHIRP = Radio(name='CHIRP', channels=None, write_header=True)
+CHIRP.set_fields_list([
+    'Location', 'Name', 'Frequency', 'Duplex', 'Offset', 'Tone', 'rToneFreq', 'cToneFreq', 'DtcsCode', 'DtcsPolarity',
+    'Mode', 'TStep', 'Skip', 'Comment', 'URCALL', 'RPT1CALL', 'RPT2CALL', 'DVCODE'
+])
+CHIRP.update_channel_dict({
+    'cToneFreq': '88.5',
+    'TStep': '5.00',
+    'DtcsPolarity': 'NN'
+})
+
+RADIOS = [FT70, FTM300, FTM400, FTM500, CHIRP]
 for radio in RADIOS:
-    radio.update_channel_dict({
-        'Tone': 'OFF',
-        'Duplex': 'OFF',
-        'User CTCSS': '1500 Hz',
-        'TX Power': 'HIGH',
-        'RX DGID': 'RX 00',
-        'TX DGID': 'TX 00',
-        'M-GRP': 'OFF',
-        'Scan': 'YES',
-        'Step': '5.0KHz',
-        'Clock Shift': 'OFF'
-    })
+    if radio in (FT70, FTM300, FTM400, FTM500):
+        radio.update_channel_dict({
+            'Tone': 'OFF',
+            'Duplex': 'OFF',
+            'User CTCSS': '1500 Hz',
+            'TX Power': 'HIGH',
+            'RX DGID': 'RX 00',
+            'TX DGID': 'TX 00',
+            'M-GRP': 'OFF',
+            'Scan': 'YES',
+            'Step': '5.0KHz',
+            'Clock Shift': 'OFF'
+        })
 
 FREQUENCY_IS_YAESU_SET = set(
     ['RX Frequency', 'TX Frequency', 'Offset', 'Duplex'])
@@ -141,6 +156,13 @@ def xlat_frequency(incoming, radio):
             outdict['TX Frequency'] = '{:0.6f}'.format(freq)
         if incoming['Duplex'] in ['+', '-']:
             outdict['Duplex'] = incoming['Duplex'] + 'RPT'
+    elif radio == CHIRP and FREQUENCY_IS_YAESU_SET.issubset(set(incoming)):
+        outdict['Frequency'] = incoming['RX Frequency']
+        outdict['Offset'] = incoming['Offset']
+        if incoming['Duplex'] == 'OFF':
+            outdict['Duplex'] = ''
+        else:
+            outdict['Duplex'] = incoming['Duplex'][0:1]
 
     return outdict
 
@@ -153,10 +175,9 @@ def xlat_mode(incoming, radio):
     outdict = {}
 
     # Consider outgoing format needs and build outdict
-    if radio in (FT70, FTM300, FTM500) and incoming['Mode'] == 'NFM':
-        outdict['Mode'] = 'FM'
-    else:
-        outdict['Mode'] = incoming['Mode']
+    if radio in (FT70, FTM300, FTM500):
+        if incoming['Mode'] == 'NFM':
+            outdict['Mode'] = 'FM'
 
     if radio == FTM400:
         if incoming['Mode'] == 'NFM':
@@ -168,6 +189,16 @@ def xlat_mode(incoming, radio):
             outdict['Narrow'] = 'ON'
         else:
             outdict['Narrow'] = 'OFF'
+
+    if radio == CHIRP:
+        if 'Width' in incoming and incoming['Width'] == '12.5Khz':
+            outdict['Mode'] = 'NFM'
+        elif 'Narrow' in incoming and incoming['Narrow'] == 'ON':
+            outdict['Mode'] = 'NFM'
+
+    for key in ('Mode', ):
+        if key not in outdict:
+            outdict[key] = incoming[key]
 
     return outdict
 
@@ -190,6 +221,21 @@ def xlat_tone(incoming, radio):
         elif incoming['Tone'] == 'TSQL':
             outdict['Tone'] = 'TONE SQL'
         outdict['rToneFreq'] = incoming['rToneFreq'] + ' Hz'
+    elif radio == CHIRP:
+        if incoming['Tone'] in ('TONE', 'TONE ENC'):
+            outdict['Tone'] = 'Tone'
+        elif incoming['Tone'] == 'TONE SQL':
+            outdict['Tone'] = 'TSQL'
+        elif incoming['Tone'] == 'OFF':
+            outdict['Tone'] = ''
+        if ' Hz' in incoming['rToneFreq']:
+            outdict['rToneFreq'] = incoming['rToneFreq'].partition(' ')[0]
+
+        for key in ('Tone', 'rToneFreq'):
+            if key not in outdict:
+                outdict[key] = incoming[key]
+        if outdict['Tone'] == 'TSQL':
+            outdict['cToneFreq'] = outdict['rToneFreq']
 
     return outdict
 
@@ -200,9 +246,11 @@ def parse_args():
     parser.add_argument('--input', '-i', required=True)
     parser.add_argument('--output', '-o', default="Yaesu-import.csv")
     parser.add_argument('--radio', '-r', default=FTM400.name, choices=[
-                        FT70.name, FTM300.name, FTM400.name, FTM500.name], help='Specify radio model [' + FTM400.name + ']')
+                        FT70.name, FTM300.name, FTM400.name, FTM500.name, CHIRP.name], help='Specify radio model [' + FTM400.name + ']')
     parser.add_argument('--band', '-b', default='A',
                         choices=['A', 'B'], help='Specify the [A] or B band, only for FTM-400')
+    parser.add_argument('--format', '-f', default=CHIRP.name, choices=[
+                        FT70.name, FTM300.name, FTM400.name, FTM500.name, CHIRP.name], help='Specify input CSV format.')
     return parser.parse_args()
 
 
@@ -219,6 +267,10 @@ def output_csv(args):
         if args.radio == radio.name:
             break
 
+    for csvformat in RADIOS:
+        if args.format == csvformat.name:
+            break
+
     def addEmptyLine(lineNumber, band=0):
         outdict = radio.build_empty_channel_dict()
         outdict['Location'] = lineNumber
@@ -227,15 +279,24 @@ def output_csv(args):
 
     # Open the Chirp file and create the Yaesu formatted array
     with open(inputFile) as csvfile:
-        reader = csv.DictReader(csvfile)
+        fieldnames = None
+        if args.format is not CHIRP.name:
+            fieldnames = csvformat.fields
+        reader = csv.DictReader(csvfile, fieldnames)
         for row in reader:
-            if row["Location"] == "0":
+            if row['Location'] == '0':
                 continue
-            while numlines + 1 != int(row["Location"]):
+            while numlines + 1 != int(row['Location']):
                 numlines += 1
-                addEmptyLine(numlines, band=band)
+                if radio.channels:
+                    addEmptyLine(numlines, band=band)
 
             outdict = radio.build_channel_dict()
+
+            # xlat incoming data formats
+            row |= xlat_frequency(row, CHIRP)
+            row |= xlat_mode(row, CHIRP)
+            row |= xlat_tone(row, CHIRP)
 
             if row['Frequency'] and row['Tone'] in ('', 'Tone', 'TSQL'):
                 numlines += 1
@@ -249,21 +310,30 @@ def output_csv(args):
                 outdict |= xlat_mode(row, radio)
                 outdict |= xlat_tone(row, radio)
 
+                outdict = radio.build_channel_dict(outdict)
                 outlist.append(outdict)
 
             else:
                 # If it's not Tone, Don't do anything now, just add an empty line
                 # This will have to handle DCS stuff one day.
                 numlines += 1
-                addEmptyLine(numlines, band=band)
+                if radio.channels:
+                    addEmptyLine(numlines, band=band)
 
-    for line in range(numlines+1, radio.channels + 1):
-        addEmptyLine(line, band=band)
+    if radio.channels:
+        for line in range(numlines+1, radio.channels + 1):
+            addEmptyLine(line, band=band)
 
     with open(outputFile, 'w') as csvWriter:
         writer = csv.DictWriter(
             csvWriter, fieldnames=radio.fields, delimiter=',')
-        for adict in outlist:
+        if radio.write_header:
+            writer.writeheader()
+        for n, adict in enumerate(outlist):
+            if radio.channels and n + 1 > radio.channels:
+                print('too many input channels for the {}, stopping at {}. (not a problem during testing)'.format(
+                    radio.name, radio.channels))
+                break
             writer.writerow(adict)
 
 
