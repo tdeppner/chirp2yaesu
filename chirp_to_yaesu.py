@@ -16,11 +16,13 @@ class Radio:
         return
 
     def build_channel_dict(self, adict=None):
+        """Return a dict for a defined channel, also can be used to constrain the input adict to the radio's fields."""
         if adict is None:
             adict = self.empty_channel_dict | self.channel_dict
         return dict((x, adict.get(x, '')) for x in self.fields)
 
     def build_empty_channel_dict(self):
+        """Return a dict suitable for an empty row in the output CSV."""
         return self.build_channel_dict(self.empty_channel_dict)
 
     def set_fields_list(self, alist):
@@ -117,8 +119,8 @@ def parse_args():
         description="This tool converts a chirp csv file to a Yaesu importable csv file.")
     parser.add_argument('--input', '-i', required=True)
     parser.add_argument('--output', '-o', default="Yaesu-import.csv")
-    parser.add_argument('--radio', '-r', default='FTM400', choices=[
-                        'FT70', 'FTM300', 'FTM400', 'FTM500'], help='Specify radio model [FTM400]')
+    parser.add_argument('--radio', '-r', default=FTM400.name, choices=[
+                        FT70.name, FTM300.name, FTM400.name, FTM500.name], help='Specify radio model [' + FTM400.name + ']')
     parser.add_argument('--band', '-b', default='A',
                         choices=['A', 'B'], help='Specify the [A] or B band, only for FTM-400')
     return parser.parse_args()
@@ -130,7 +132,7 @@ def output_csv(args):
     inputFile = args.input
     outputFile = args.output
     band = 0
-    if args.radio == 'FTM400' and args.band == 'B':
+    if args.radio == FTM400.name and args.band == 'B':
         band = "1"
 
     for radio in RADIOS:
@@ -155,9 +157,15 @@ def output_csv(args):
 
             outdict = radio.build_channel_dict()
 
-            if row["Tone"] in ("Tone", "TSQL") or (row['Frequency'] != None and row["Tone"] == ''):
+            if row['Frequency'] and row['Tone'] in ('', 'Tone', 'TSQL'):
                 numlines += 1
                 outdict['Location'] = str(numlines)
+                outdict['Band'] = band
+                outdict['Name'] = row['Name'][0:8]
+                outdict['Comment'] = row['Comment']
+                outdict['DtcsCode'] = row['DtcsCode']
+
+                # set Frequency, duplex, offsets, etc
                 outdict['RX Frequency'] = row['Frequency']
                 if row['Offset'] == "OFF":
                     outdict['TX Frequency'] = row['Frequency']
@@ -171,21 +179,20 @@ def output_csv(args):
                 outdict['Offset'] = row['Offset']
                 if row['Duplex'] in ['+', '-']:
                     outdict['Duplex'] = row['Duplex'] + 'RPT'
+
+                # set Mode, wide/narrow, etc
                 outdict['Mode'] = row['Mode']
-                if radio.name in ('FT70', 'FTM300', 'FTM500') and outdict['Mode'] == 'NFM':
+                if radio in (FT70, FTM300, FTM500) and outdict['Mode'] == 'NFM':
                     outdict['Mode'] = 'FM'
-                outdict['Name'] = row['Name'][0:8]
+                outdict['Width'] = '12.5KHz' if row['Mode'] == 'NFM' else '25.0KHz'
+                outdict['Narrow'] = 'ON' if row['Mode'] == 'NFM' else 'OFF'
+
                 if row["Tone"] == "Tone":
                     # FTM300, FT70
-                    outdict['Tone'] = 'TONE ENC' if radio.name == 'FTM400' else 'TONE'
+                    outdict['Tone'] = 'TONE ENC' if radio == FTM400 else 'TONE'
                 elif row["Tone"] == "TSQL":
                     outdict['Tone'] = 'TONE SQL'
                 outdict['rToneFreq'] = row['rToneFreq'] + ' Hz'
-                outdict['DtcsCode'] = row['DtcsCode']
-                outdict['Width'] = '12.5KHz' if row['Mode'] == 'NFM' else '25.0KHz'
-                outdict['Narrow'] = 'ON' if row['Mode'] == 'NFM' else 'OFF'
-                outdict['Comment'] = row['Comment']
-                outdict['Band'] = band
 
                 outlist.append(radio.build_channel_dict(outdict))
                 # @@ outlist.append(outdict)
