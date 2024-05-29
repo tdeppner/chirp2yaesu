@@ -113,6 +113,86 @@ for radio in RADIOS:
         'Clock Shift': 'OFF'
     })
 
+FREQUENCY_IS_YAESU_SET = set(
+    ['RX Frequency', 'TX Frequency', 'Offset', 'Duplex'])
+
+
+def xlat_frequency(incoming, radio):
+    """Translate Frequency details from incoming format to outgoing format, return a new dict with the specifics.
+
+    Currently, we presume that incoming is always Chirp style (Frequency, Duplex, Offset). This will change.
+
+    @@ gives no output if no radio is matched
+    """
+    outdict = {}
+
+    # Consider outgoing format needs and build outdict
+    if radio in (FT70, FTM300, FTM400, FTM500):
+        outdict['RX Frequency'] = incoming['Frequency']
+        outdict['Offset'] = incoming['Offset']
+        if incoming['Offset'] == 'OFF':
+            outdict['TX Frequency'] = incoming['Frequency']
+        else:
+            freq = float(incoming['Frequency'])
+            if incoming['Duplex'] == '-':
+                freq = freq - float(incoming['Offset'])
+            elif incoming['Duplex'] == "+":
+                freq = freq + float(incoming['Offset'])
+            outdict['TX Frequency'] = '{:0.6f}'.format(freq)
+        if incoming['Duplex'] in ['+', '-']:
+            outdict['Duplex'] = incoming['Duplex'] + 'RPT'
+
+    return outdict
+
+
+def xlat_mode(incoming, radio):
+    """Translate Mode details from incoming format to outgoing format, return a new dict with the specifics.
+
+    Currently, we presume that incoming is always Chirp style (Mode). This will change.
+    """
+    outdict = {}
+
+    # Consider outgoing format needs and build outdict
+    if radio in (FT70, FTM300, FTM500) and incoming['Mode'] == 'NFM':
+        outdict['Mode'] = 'FM'
+    else:
+        outdict['Mode'] = incoming['Mode']
+
+    if radio == FTM400:
+        if incoming['Mode'] == 'NFM':
+            outdict['Width'] = '12.5KHz'
+        else:
+            outdict['Width'] = '25.0KHz'
+    elif radio in (FTM300, FTM500):
+        if incoming['Mode'] == 'NFM':
+            outdict['Narrow'] = 'ON'
+        else:
+            outdict['Narrow'] = 'OFF'
+
+    return outdict
+
+
+def xlat_tone(incoming, radio):
+    """Translate Tone details from incoming format to outgoing format, return a new dict with the specifics.
+
+    Currently, we presume that incoming is always Chirp style (Mode). This will change.
+
+    @@ gives no output if no radio is matched
+    """
+    outdict = {}
+
+    if radio in (FT70, FTM300, FTM400, FTM500):
+        if incoming['Tone'] == 'Tone':
+            if radio == FTM400:
+                outdict['Tone'] = 'TONE ENC'
+            else:
+                outdict['Tone'] = 'TONE'
+        elif incoming['Tone'] == 'TSQL':
+            outdict['Tone'] = 'TONE SQL'
+        outdict['rToneFreq'] = incoming['rToneFreq'] + ' Hz'
+
+    return outdict
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -165,37 +245,11 @@ def output_csv(args):
                 outdict['Comment'] = row['Comment']
                 outdict['DtcsCode'] = row['DtcsCode']
 
-                # set Frequency, duplex, offsets, etc
-                outdict['RX Frequency'] = row['Frequency']
-                if row['Offset'] == "OFF":
-                    outdict['TX Frequency'] = row['Frequency']
-                else:
-                    freq = float(row['Frequency'])
-                    if row['Duplex'] == "-":
-                        freq = freq - float(row['Offset'])
-                    elif row['Duplex'] == "+":
-                        freq = freq + float(row['Offset'])
-                    outdict['TX Frequency'] = '{:0.6f}'.format(freq)
-                outdict['Offset'] = row['Offset']
-                if row['Duplex'] in ['+', '-']:
-                    outdict['Duplex'] = row['Duplex'] + 'RPT'
+                outdict |= xlat_frequency(row, radio)
+                outdict |= xlat_mode(row, radio)
+                outdict |= xlat_tone(row, radio)
 
-                # set Mode, wide/narrow, etc
-                outdict['Mode'] = row['Mode']
-                if radio in (FT70, FTM300, FTM500) and outdict['Mode'] == 'NFM':
-                    outdict['Mode'] = 'FM'
-                outdict['Width'] = '12.5KHz' if row['Mode'] == 'NFM' else '25.0KHz'
-                outdict['Narrow'] = 'ON' if row['Mode'] == 'NFM' else 'OFF'
-
-                if row["Tone"] == "Tone":
-                    # FTM300, FT70
-                    outdict['Tone'] = 'TONE ENC' if radio == FTM400 else 'TONE'
-                elif row["Tone"] == "TSQL":
-                    outdict['Tone'] = 'TONE SQL'
-                outdict['rToneFreq'] = row['rToneFreq'] + ' Hz'
-
-                outlist.append(radio.build_channel_dict(outdict))
-                # @@ outlist.append(outdict)
+                outlist.append(outdict)
 
             else:
                 # If it's not Tone, Don't do anything now, just add an empty line
