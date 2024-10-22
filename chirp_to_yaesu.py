@@ -240,17 +240,21 @@ def xlat_tone(incoming, radio):
     return outdict
 
 
+def sorted_radio_names():
+    return sorted(x.name for x in RADIOS)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="This tool converts a chirp csv file to a Yaesu importable csv file.")
-    parser.add_argument('--input', '-i', required=True)
-    parser.add_argument('--output', '-o', default="Yaesu-import.csv")
-    parser.add_argument('--radio', '-r', default=FTM400.name, choices=[
-                        FT70.name, FTM300.name, FTM400.name, FTM500.name, CHIRP.name], help='Specify radio model [' + FTM400.name + ']')
+    parser.add_argument('--input', '-i', required=True, help='The input filename.')
+    parser.add_argument('--output', '-o', default="Yaesu-import.csv", help='The output filename [Yaesu-import.csv].')
+    parser.add_argument('--radio', '-r', default=FTM400.name, choices=sorted_radio_names(),
+                        help='Specify radio model [' + FTM400.name + ']')
     parser.add_argument('--band', '-b', default='A',
                         choices=['A', 'B'], help='Specify the [A] or B band, only for FTM-400')
-    parser.add_argument('--format', '-f', default=CHIRP.name, choices=[
-                        FT70.name, FTM300.name, FTM400.name, FTM500.name, CHIRP.name], help='Specify input CSV format.')
+    parser.add_argument('--format', '-f', default=CHIRP.name, choices=sorted_radio_names(),
+                        help='Specify input CSV format [' + CHIRP.name + '].')
     return parser.parse_args()
 
 
@@ -277,7 +281,6 @@ def output_csv(args):
         outdict['Band'] = band
         outlist.append(outdict)
 
-    # Open the Chirp file and create the Yaesu formatted array
     with open(inputFile) as csvfile:
         fieldnames = None
         if args.format is not CHIRP.name:
